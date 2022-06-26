@@ -1,18 +1,23 @@
 package main
 
-//------------------------------------------------------------------------------------------------------------
-//
-//								FontCvtTool
-//        Converts output from Segger's FontCvt to a binary (FLASH memory) format or the format
-//        used by my legacy library GraphLCD
-//------------------------------------------------------------------------------------------------------------
-
 import (
 	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
+)
+
+//------------------------------------------------------------------------------------------------------------
+//
+//								FontCvtTool
+//        Converts output from Segger's FontCvt to a binary (FLASH memory) format or the format
+//        used by my legacy library GraphLCD
+//
+//                                This is a command-line tool
+//------------------------------------------------------------------------------------------------------------
+
+import (
 	"strconv"
 	"strings"
 )
@@ -24,6 +29,29 @@ var options = ""
 var validFontCvtSrcFile bool = false
 var validSeggerFile bool = false
 var fontNameFromSrc = ""
+
+// Structures used to store the embedded typeface
+// The data is stored in a horizontal format, for vertically oriented LCD displays a function will
+// read the glyph sideways
+
+// Struct for each individual character
+type character struct {
+	character_code   uint16    // Because we're now doing Unicode we use 16 bits (normal ASCII maps to the lower bits)
+	character_width  byte      // Width of character (in bytes)
+	character_height byte      // Height of character (in bytes)
+	character_data   [255]byte // Character bitmap data (up to 255 bytes)
+}
+
+// Struct for the entire embedded font
+type font struct {
+	numofchars uint16          // Number of characters in the font
+	mode       uint8           // Font mode (1bpp = 0; 1 = 4bpp (grayscale anti-aliasing) 2 = RGB
+	chars      [4096]character // Individual character storage
+}
+
+// Struct variables
+
+var fontdata font
 
 // Function to read the file in lines.. rather than seeking...
 //-------------------------------------------------------------
@@ -170,8 +198,14 @@ func main() {
 		return
 	}
 
+	//----------------------------------------------------------------------------------------------------------------
+	// Parsing loop
 	// This loop will now step through each line of the file and parse out character bitmap data as well as
-	// the other parameters
+	//    the other parameters
+	// 26 June 2022: It parses the file correctly and completely, but not doing anything further right now
+	//  TODO: strip out the character glyph size and make it smart, i.e. if the character cell has an empty columm..
+	//        remove the column because FontCvt is NOT that smart
+	//----------------------------------------------------------------------------------------------------------------
 
 	var current_line = 0
 	for {
@@ -193,30 +227,36 @@ func main() {
 			}
 			// Unicode character code is read, now advance to the next line and examine the pixel data
 			// We figure out how many rows and columns the character fits in
-			fmt.Println(fmt.Sprintf("   Unicode Char Code: %04X", unicode))
+			fmt.Println(fmt.Sprintf("   Unicode Char (HEX): %04X", unicode))
+			fontdata.numofchars++
 
 			current_line++ // Advance to next line
-
+			var char_cols = 0
+			var char_rows = 0
 			for {
 				var pattern string = ""
+				char_cols = 0
 				q1 := strings.Split(lines[current_line], "  ") // Split.. left part = spaces, right part = bit pattern
 				q2 := strings.SplitAfter(q1[1], ",")
 
 				for n := 0; n < len(q2)-1; n++ {
 					pattern += strings.Trim(q2[n], ",")
 					pattern += " "
+					char_cols++
 				}
-				fmt.Println("  Row Bit Pattern: " + pattern)
+				fmt.Println("   └ Row Bit Pattern: " + pattern)
+				char_rows++
 				current_line++
 				if strings.Contains(lines[current_line], "};") {
 					break
 				}
 			}
 
-			//fmt.Println(fmt.Sprintf("    └ Vert. Col = %d   Bit Patt: %s", len(q2)-1, pattern))
+			fmt.Println(fmt.Sprintf("   └ Glyph X-size (bytes): %d", char_cols))
+			fmt.Println(fmt.Sprintf("   └ Glyph Y-size (bytes): %d", char_rows))
 
 		}
 		current_line++
 	}
-	fmt.Println("Out of parsing loop... ")
+	fmt.Println(fmt.Sprintf(" Input parsed! Number of characters found: %d", fontdata.numofchars))
 }
